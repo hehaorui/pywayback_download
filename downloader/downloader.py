@@ -46,7 +46,8 @@ async def __download_coroutine__(q, failedqueue, client, dir=""):
         os.remove(path)
       
       __download_coroutine__.counter += 1
-      print(f"Failed to download {url}: {e} ({__download_coroutine__.counter}/{total})")
+      errContent = str(e) if len(str(e))>0 else str(type(e))
+      print(f"Failed to download {url}: {errContent} ({__download_coroutine__.counter}/{total})")
       await failedqueue.put(fileItem)
 
 async def download_from_filelist(files, concurrency=10, dir=""):
