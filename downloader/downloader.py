@@ -14,8 +14,8 @@ async def __download_coroutine__(q, failedqueue, client, dir=""):
     __download_coroutine__.total  = q.qsize()
   total = __download_coroutine__.total
   
-  if dir != "" and dir[-1] != "/":
-    dir += "/"
+  if dir != "" and dir[-1] != os.sep:
+    dir += os.sep
   
   # The file is a dictionary with the keys "file_url" and "file_path"
   while not q.empty():
@@ -68,6 +68,8 @@ async def download_from_filelist(files, concurrency=10, dir=""):
 
 
 def download_from_json(json_file, concurrency=10, parser=None, dir=""):
+  if dir != "" and dir[-1] != os.sep:
+    dir += os.sep
   with open(json_file, "r") as f:
     files = json.load(f)
   if parser:
