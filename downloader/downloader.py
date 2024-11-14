@@ -4,7 +4,6 @@ import os
 import json
 import asyncio
 import aiofiles
-from queue import Queue
 
 
 async def __download_coroutine__(q, failedqueue, client, dir=""):
