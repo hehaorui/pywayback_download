@@ -36,7 +36,7 @@ class IndexFetcher:
     if collapes:
       params["collapse"] = collapes
 
-    if all:
+    if not all:
       params["filter"] = "statuscode:200"
       
     if fr:
