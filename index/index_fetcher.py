@@ -19,6 +19,7 @@ class IndexFetcher:
     self.gzip = gzip
     self.fl = fl
     self.sleep_time = sleep_time
+    self.indexPageQueue = None
 
     
     
@@ -65,22 +66,22 @@ class IndexFetcher:
       params["fl"] = self.fl
       self.total = page_num
 
-      q = asyncio.Queue()
+      self.indexPageQueue = asyncio.Queue()
       for i in range(page_num):
-        await q.put({"page": i, "retry": retry})
+        await self.indexPageQueue.put({"page": i, "retry": retry})
       
       concur = min(concurrency, page_num)   
-      coros = [self.__fetcher_coroutine__(client, params, q) for _ in range(concur)]
+      coros = [self.__fetcher_coroutine__(client, params) for _ in range(concur)]
       
       results = sum(await asyncio.gather(*coros), [])
       print(f"Fetched {len(results)} records for {url}")
       return results
         
-  async def __fetcher_coroutine__(self, client, params, q):
+  async def __fetcher_coroutine__(self, client, params):
     params = params.copy()
     results = []
-    while not q.empty():
-      item = await q.get()
+    while not self.indexPageQueue.empty():
+      item = await self.indexPageQueue.get()
       params["page"] = item["page"]
       try:
         data = (await client.get(self.base_url, params=params)).json()[1:]
@@ -91,7 +92,7 @@ class IndexFetcher:
           print(f"Failed to fetch index at page ({params["page"]+1}/{self.total}): "
                 f"{errContent}, aborting this page...")
         else:
-          await q.put({"page": item["page"], "retry": item["retry"]-1})
+          await self.indexPageQueue.put({"page": item["page"], "retry": item["retry"]-1})
           print(f"Failed to fetch index at page ({params["page"]+1}/{self.total}): "
                 f"{errContent}, {item["retry"]} retries left")
         print(f"\tSleeping for {self.sleep_time}s before next request...")
