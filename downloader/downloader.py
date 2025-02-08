@@ -17,7 +17,6 @@ class HTTPError(Exception):
 class Downloader:
   def __init__(self, writer):
     self.counter = None
-    self.total = None
     self.failedlist = []
     self.writer = writer
 
@@ -47,7 +46,7 @@ class Downloader:
         await self.writer.write(snapshot)
       except Exception as e:
         if tried < retry:
-          print(f"Error with {url}, retry for {retry-tried} times")
+          print(f"Error with {url}: {e}, retry for {retry-tried} times")
           await queue.put({"snapshot": snapshot, "tried": tried})
         else:
           print(f"Error with {url}, failed after {retry} times")
@@ -55,13 +54,12 @@ class Downloader:
         continue
       self.counter += 1
       local_success += 1
-      print(f"Download {url} succeeded ({self.counter}/{self.total})")
+      print(f"Download {url} succeeded (download count: {self.counter})")
     
     return local_success, local_failed
 
   async def download(self, queue, concurrency=10, retry=5):
     self.counter = 0
-    self.total = queue.qsize()
     client = httpx.AsyncClient(http2=True)
     coros = [self.__download_coro__(queue, client, retry) for _ in range(concurrency)]
     await asyncio.gather(*coros)
