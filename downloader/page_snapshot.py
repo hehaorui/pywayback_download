@@ -15,7 +15,7 @@ class PageSnapshot:
   # default to the IA's url
   def get_archive_url(self, base_url=None):
     if base_url==None:
-      base_url = "http://web.archive.org/web/"
+      base_url = "https://web.archive.org/web/"
     if not self.index_record:
       raise Exception("No index_record specified")
     if not self.index_record["original"]:
@@ -50,6 +50,10 @@ class PageSnapshot:
       original_url = httpx.URL(self.resp.request.url)
       timestamp = datetime.datetime.now().strftime("%Y%m%d%H%M%S")
 
-    return f"{original_url.host}/{timestamp}{original_url.path}"
+    if original_url.path[-1] == "/" or original_url.path == "":
+      path = original_url.path + "index.html"
+    else:
+      path = original_url.path
+    return f"{original_url.host}/{timestamp}{path}"
 
     

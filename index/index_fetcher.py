@@ -23,7 +23,7 @@ class IndexFetcher:
     if base_url:
       self.base_url = base_url
     else:
-      self.base_url = "http://web.archive.org/cdx/search/cdx/"
+      self.base_url = "https://web.archive.org/cdx/search/cdx/"
     self.gzip = gzip
     self.fl = fl
     self.sleep_time = sleep_time
