@@ -1,87 +1,97 @@
-from attr import has
 import httpx
 import os
-import json
 import asyncio
 import aiofiles
+from .page_snapshot import PageSnapshot
 
+class FileWriteError(Exception):
+  def __init__(self, message):
+    self.message = message
+    super().__init__(self.message)
 
-async def __download_coroutine__(q, failedqueue, client, dir=""):
-  if not hasattr(__download_coroutine__, "counter"):
-    __download_coroutine__.counter = 0
-  if not hasattr(__download_coroutine__, "total"):
-    __download_coroutine__.total  = q.qsize()
-  total = __download_coroutine__.total
-  
-  if dir != "" and dir[-1] != os.sep:
-    dir += os.sep
-  
-  # The file is a dictionary with the keys "file_url" and "file_path"
-  while not q.empty():
-    fileItem = await q.get()
-    url = fileItem["file_url"]
-    path = dir+fileItem["file_path"]
+class HTTPError(Exception):
+  def __init__(self, message, status_code):
+    self.status_code = status_code
+    super().__init__(message+f": {status_code}")
+
+class Downloader:
+  def __init__(self, writer):
+    self.counter = None
+    self.total = None
+    self.failedlist = []
+    self.writer = writer
+
+  async def __download_coro__(self, queue, client, retry):
+    finished = False
+    local_success = 0
+    local_failed = 0
+    while not finished:
+      try:
+        d = await queue.get()
+        assert(isinstance(d, dict))
+      except AssertionError:
+        print("\033[91mWrong type of object in queue: ", d, "\033[0m")
+      except asyncio.QueueShutDown:
+        finished = True
+        continue
+      snapshot = d["snapshot"]
+      tried = d["tried"]
+      url = snapshot.get_archive_url()
+
+      try:
+        r = await client.get(url, timeout=60)
+        tried += 1
+        if r.status_code != 200:
+            raise HTTPError(f"failed to download {url}", r.status_code)
+        snapshot.resp = r
+        await self.writer.write(snapshot)
+      except Exception as e:
+        if tried < retry:
+          print(f"Error with {url}, retry for {retry-tried} times")
+          await queue.put({"snapshot": snapshot, "tried": tried})
+        else:
+          print(f"Error with {url}, failed after {retry} times")
+          local_failed += 1
+        continue
+      self.counter += 1
+      local_success += 1
+      print(f"Download {url} succeeded ({self.counter}/{self.total})")
     
-    if os.path.exists(path) and os.path.getsize(path) > 0:
-      __download_coroutine__.counter += 1
-      print(f"File already exists: {path} ({__download_coroutine__.counter}/{total})")
-      continue
+    return local_success, local_failed
 
+  async def download(self, queue, concurrency=10, retry=5):
+    self.counter = 0
+    self.total = queue.qsize()
+    client = httpx.AsyncClient(http2=True)
+    coros = [self.__download_coro__(queue, client, retry) for _ in range(concurrency)]
+    await asyncio.gather(*coros)
+    await client.aclose()
+    
+
+class Writer:
+  async def write(self, page_snapshot: PageSnapshot):
+    raise NotImplementedError
+    
+class FileTreeWriter(Writer):
+  def __init__(self, base_dir):
+    if base_dir != "" and base_dir[-1] != os.sep:
+      self.base_dir = base_dir + os.sep
+    else:
+      self.base_dir = base_dir
+
+  async def write(self, page_snapshot: PageSnapshot):
+    path = self.base_dir + page_snapshot.get_tree_path()
+    if os.path.exists(path) and os.path.getsize(path) > 0:
+      print(f"File already exists: {path}")
+      return
+    
+    os.makedirs(os.path.dirname(path), exist_ok=True)
     try:
-      r = await client.get(url, timeout=60)
-      if r.status_code != 200:
-        raise Exception(f"HTTP error: {r.status_code}")
-      
-      os.makedirs(os.path.dirname(path), exist_ok=True)
       async with aiofiles.open(path, "wb") as f:
-        await f.write(r.content)
-      
-      __download_coroutine__.counter += 1
-      print(f"Downloaded {url} to {path} ({__download_coroutine__.counter}/{total})")
-      
+        await f.write(page_snapshot.resp.content)
     except Exception as e:
       if os.path.exists(path) and os.path.getsize(path) == 0:
         print(f"{path} is empty and was removed.")
         os.remove(path)
-      
-      __download_coroutine__.counter += 1
       errContent = str(e) if len(str(e))>0 else str(type(e))
-      print(f"Failed to download {url}: {errContent} ({__download_coroutine__.counter}/{total})")
-      await failedqueue.put(fileItem)
-
-async def download_from_filelist(files, concurrency=10, dir=""):
-  failedqueue = asyncio.Queue()
-  q = asyncio.Queue()
-  for file in files:
-    await q.put(file)
-
-  async with httpx.AsyncClient(http2=True) as client:
-    coros = [__download_coroutine__(q, failedqueue, client, dir) for _ in range(concurrency)]
-    await asyncio.gather(*coros)
-  
-  failedlist = []
-  while not failedqueue.empty():
-    failedlist.append(await failedqueue.get())
-
-  return failedlist
-
-
-def download_from_json(json_file, concurrency=10, parser=None, dir=""):
-  if dir != "" and dir[-1] != os.sep:
-    dir += os.sep
-  with open(json_file, "r") as f:
-    files = json.load(f)
-  if parser:
-    files = parser.parse(files)
-
-  failedlist = asyncio.run(download_from_filelist(files, concurrency, dir))
-
-  with open(dir+"failed.json", "w") as f:
-    json.dump(failedlist, f)
-
-class ListParser:
-  def __init__(self, mapper):
-    self.mapper = mapper
-
-  def parse(self, files):
-    return list(map(self.mapper, files))
+      raise FileWriteError(f"Failed to write {path}: {errContent}")

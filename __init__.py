@@ -1,10 +1,16 @@
 #!/bin/python
-from downloader.wayback_machine_parser import wayback_machine_mapper
-from downloader.downloader import ListParser, download_from_json
-def main():
-  json_file = "./filelist.json"
-  dir = "<path_to_save_downloaded_files>"
-  download_from_json(json_file, thread_count=50, parser=ListParser(wayback_machine_mapper), dir=dir)
+import asyncio
+from index.index_fetcher import IndexFetcher
+from downloader.downloader import Downloader, FileTreeWriter
+async def main():
+  q = asyncio.Queue()
+  idx_fetcher = IndexFetcher(sleep_time=10)
+  writer = FileTreeWriter(base_dir="./www.cqu.edu.cn/")
+  downloader = Downloader(writer=writer)
+
+  tsk_list = [idx_fetcher.fetchIndex("www.cqu.edu.cn", concurrency=1, out_queue=q), 
+              downloader.download(q, concurrency=2, retry=5)]
+  await asyncio.gather(*tsk_list)
 
 if __name__ == "__main__":
-  main()
+  asyncio.run(main())
