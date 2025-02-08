@@ -35,6 +35,11 @@ class Downloader:
         continue
       snapshot = d["snapshot"]
       tried = d["tried"]
+      if not self.writer.needDownload(snapshot):
+        self.counter += 1
+        local_success += 1
+        print(f"Skip downloading {snapshot.get_archive_url()} (download count: {self.counter})")
+        continue
       url = snapshot.get_archive_url()
 
       try:
@@ -69,6 +74,9 @@ class Downloader:
 class Writer:
   async def write(self, page_snapshot: PageSnapshot):
     raise NotImplementedError
+  
+  def needDownload(self, page_snapshot: PageSnapshot):
+    raise NotImplementedError
     
 class FileTreeWriter(Writer):
   def __init__(self, base_dir):
@@ -93,3 +101,9 @@ class FileTreeWriter(Writer):
         os.remove(path)
       errContent = str(e) if len(str(e))>0 else str(type(e))
       raise FileWriteError(f"Failed to write {path}: {errContent}")
+    
+  def needDownload(self, page_snapshot: PageSnapshot):
+    if page_snapshot.index_record == None:
+      return True
+    path = self.base_dir + page_snapshot.get_tree_path()
+    return not (os.path.exists(path) and os.path.getsize(path) > 0)
