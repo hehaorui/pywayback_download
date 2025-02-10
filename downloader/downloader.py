@@ -19,22 +19,25 @@ class Downloader:
     self.counter = None
     self.failedlist = []
     self.writer = writer
+    self.retry = None
+    self.tried = None
 
-  async def __download_coro__(self, queue, client, retry):
+  async def __download_coro__(self, queue, client, failqueue, waitqueue=False):
     finished = False
     local_success = 0
-    local_failed = 0
     while not finished:
       try:
-        d = await queue.get()
-        assert(isinstance(d, dict))
+        snapshot = await queue.get() if waitqueue else queue.get_nowait()
+        assert(isinstance(snapshot, PageSnapshot))
       except AssertionError:
-        print("\033[91mWrong type of object in queue: ", d, "\033[0m")
+        print("\033[91mWrong type of object in queue: ", snapshot, "\033[0m")
+      except asyncio.QueueEmpty:
+        finished = True
+        continue
       except asyncio.QueueShutDown:
         finished = True
         continue
-      snapshot = d["snapshot"]
-      tried = d["tried"]
+
       if not self.writer.needDownload(snapshot):
         self.counter += 1
         local_success += 1
@@ -44,31 +47,47 @@ class Downloader:
 
       try:
         r = await client.get(url, timeout=60)
-        tried += 1
         if r.status_code != 200:
-            raise HTTPError(f"failed to download {url}", r.status_code)
+            raise HTTPError(f"HTTP request for {url} failed", r.status_code)
         snapshot.resp = r
         await self.writer.write(snapshot)
       except Exception as e:
-        if tried < retry:
-          print(f"Error with {url}: {e}, retry for {retry-tried} times")
-          await queue.put({"snapshot": snapshot, "tried": tried})
+        errContent = str(e) if len(str(e))>0 else str(type(e))
+        if self.tried < self.retry:
+          print(f"Error with {url}: {errContent}, retry for {self.retry-self.tried} times")
         else:
-          print(f"Error with {url}, failed after {retry} times")
-          local_failed += 1
+          print(f"Error with {url}: {errContent}, failed after {self.retry} times")
+        
+        await failqueue.put(snapshot)
         continue
       self.counter += 1
       local_success += 1
       print(f"Download {url} succeeded (download count: {self.counter})")
-    
-    return local_success, local_failed
+
+    return local_success
 
   async def download(self, queue, concurrency=10, retry=5):
     self.counter = 0
+    self.tried = 0
+    self.retry = retry
     client = httpx.AsyncClient(http2=True)
-    coros = [self.__download_coro__(queue, client, retry) for _ in range(concurrency)]
+    failqueue = asyncio.Queue()
+
+    # first pass, getting record from IndexFetcher
+    self.tried += 1
+    coros = [self.__download_coro__(queue, client, failqueue, True) for _ in range(concurrency)]
     await asyncio.gather(*coros)
+    
+    # retry failed pages
+    while self.tried < self.retry:
+      self.tried += 1
+      queue = failqueue
+      failqueue = asyncio.Queue()
+      coros = [self.__download_coro__(queue, client, failqueue) for _ in range(concurrency)]
+      await asyncio.gather(*coros)
+    
     await client.aclose()
+    return list(failqueue)
     
 
 class Writer:

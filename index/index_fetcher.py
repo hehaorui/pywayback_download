@@ -123,8 +123,7 @@ class IndexFetcher:
       # put the fetched page indices to the output queue
       if out_queue:
         for record in data:
-          await out_queue.put({"snapshot": PageSnapshot(index_record=record),
-                               "tried": 0})
+          await out_queue.put(PageSnapshot(index_record=record))
       
       # sleep to avoid exceding the rate limit
       print(f"\tSleeping for {self.sleep_time}s before next request...")
