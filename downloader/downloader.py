@@ -3,6 +3,8 @@ import os
 import asyncio
 import aiofiles
 from .page_snapshot import PageSnapshot
+import warcio.warcwriter
+from warcio.statusandheaders import StatusAndHeaders
 
 class FileWriteError(Exception):
   def __init__(self, message):
@@ -47,7 +49,7 @@ class Downloader:
 
       try:
         r = await client.get(url, timeout=60)
-        if r.status_code != 200:
+        if r.status_code != 200 and not str(r.status_code).startswith("3"):
             raise HTTPError(f"HTTP request for {url} failed", r.status_code)
         snapshot.resp = r
         await self.writer.write(snapshot)
@@ -87,7 +89,10 @@ class Downloader:
       await asyncio.gather(*coros)
     
     await client.aclose()
-    return list(failqueue)
+    faillist = []
+    while not failqueue.empty():
+      faillist.append(await failqueue.get())
+    return faillist
     
 
 class Writer:
@@ -126,3 +131,14 @@ class FileTreeWriter(Writer):
       return True
     path = self.base_dir + page_snapshot.get_tree_path()
     return not (os.path.exists(path) and os.path.getsize(path) > 0)
+  
+class MyWARCWriter(Writer):
+  def __init__(self, warciowriter: warcio.warcwriter.WARCWriter):
+    self.warciowriter: warcio.warcwriter.WARCWriter = warciowriter
+
+  async def write(self, snapshot: PageSnapshot):
+    record = snapshot.buildWarcRecord()
+    self.warciowriter.write_record(record)
+  
+  def needDownload(self, page_snapshot: PageSnapshot):
+    return True
