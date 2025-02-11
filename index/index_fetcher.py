@@ -83,7 +83,8 @@ class IndexFetcher:
       coros = [self.__fetcher_coroutine__(client, params, out_queue) for _ in range(concur)]
       
       results = sum(await asyncio.gather(*coros), [])
-    out_queue.shutdown()
+    if out_queue:
+      out_queue.shutdown()
     print(f"Fetched {len(results)} records for {url}")
     return results
         
