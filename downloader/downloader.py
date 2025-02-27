@@ -24,7 +24,7 @@ class Downloader:
     self.retry = None
     self.tried = None
 
-  async def __download_coro__(self, queue, client, failqueue, waitqueue=False):
+  async def __download_coro__(self, queue, client, failqueue, waitqueue=False, except_domain=None):
     finished = False
     local_success = 0
     while not finished:
@@ -38,6 +38,13 @@ class Downloader:
         continue
       except asyncio.QueueShutDown:
         finished = True
+        continue
+      
+      if except_domain and snapshot.get_domain() in except_domain:
+        self.counter += 1
+        local_success += 1
+        print(f"{snapshot.get_archive_url()} skipped because it's in exception list \
+               (download count: {self.counter})")
         continue
 
       if not self.writer.needDownload(snapshot):
@@ -68,7 +75,7 @@ class Downloader:
 
     return local_success
 
-  async def download(self, queue, concurrency=10, retry=5):
+  async def download(self, queue, concurrency=10, retry=5, except_domain=None):
     self.counter = 0
     self.tried = 0
     self.retry = retry
@@ -77,7 +84,7 @@ class Downloader:
 
     # first pass, getting record from IndexFetcher
     self.tried += 1
-    coros = [self.__download_coro__(queue, client, failqueue, True) for _ in range(concurrency)]
+    coros = [self.__download_coro__(queue, client, failqueue, True, except_domain) for _ in range(concurrency)]
     await asyncio.gather(*coros)
     
     # retry failed pages
@@ -85,7 +92,7 @@ class Downloader:
       self.tried += 1
       queue = failqueue
       failqueue = asyncio.Queue()
-      coros = [self.__download_coro__(queue, client, failqueue) for _ in range(concurrency)]
+      coros = [self.__download_coro__(queue, client, failqueue, False, except_doamin) for _ in range(concurrency)]
       await asyncio.gather(*coros)
     
     await client.aclose()

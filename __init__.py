@@ -7,14 +7,15 @@ from downloader.downloader import Downloader, FileTreeWriter, MyWARCWriter
 async def main():
   q = asyncio.Queue()
   idx_fetcher = IndexFetcher(sleep_time=10)
+  except_domain = ["mirrors.cqu.edu.cn"]
   # writer = FileTreeWriter(base_dir="./www.cqu.edu.cn/")
   with open("www.cqu.edu.cn.warc", "wb") as output:
-    warcio_writer = warcio.warcwriter.WARCWriter(output, gzip=False)
+    warcio_writer = warcio.warcwriter.WARCWriter(output, gzip=True)
     writer = MyWARCWriter(warciowriter=warcio_writer)
     downloader = Downloader(writer=writer)
 
     tsk_list = [idx_fetcher.fetchIndex("cqu.edu.cn", concurrency=1, out_queue=q, matchType=MatchType.DOMAIN), 
-              downloader.download(q, concurrency=20, retry=20)]
+                downloader.download(q, concurrency=20, retry=20, except_domain=except_domain)]
     await asyncio.gather(*tsk_list)
 
 if __name__ == "__main__":

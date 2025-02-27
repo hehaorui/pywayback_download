@@ -155,4 +155,13 @@ class PageSnapshot:
     else:
        return str(self.resp.request.url)
 
+  def get_domain(self):
+    if not self.index_record and not self.resp:
+      raise Exception("No response nor index_record specified")
+    
+    if self.index_record and "original" in self.index_record:
+      return str(httpx.URL(self.index_record["original"]).host)
+
+    elif self.resp:
+      return str(self.resp.url.host)
     
