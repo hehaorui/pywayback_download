@@ -92,7 +92,7 @@ class Downloader:
       self.tried += 1
       queue = failqueue
       failqueue = asyncio.Queue()
-      coros = [self.__download_coro__(queue, client, failqueue, False, except_doamin) for _ in range(concurrency)]
+      coros = [self.__download_coro__(queue, client, failqueue, False, except_domain) for _ in range(concurrency)]
       await asyncio.gather(*coros)
     
     await client.aclose()
