@@ -107,8 +107,9 @@ class PageSnapshot:
       raise Exception("No original url specified in index_record")
     if not self.index_record["timestamp"]:
       raise Exception("No timestamp specified in index_record")
-    
-    return f"{base_url}{self.index_record['timestamp']}/{self.index_record['original']}"
+
+    #note that we need to append id_ after the timestamp to get the raw page
+    return f"{base_url}{self.index_record['timestamp']}id_/{self.index_record['original']}"
 
   # genater the relative path to file tree root for storing the page
   # the path is inferred with a priority of 1.index_record, 2.IA's special response header, 
